@@ -89,23 +89,18 @@ impl LinkMessage {
     }
 
     pub async fn delete_and_return_link(pg_pool: &PgPool) -> LinkMessage {
-        let select_element_before_delete = sqlx::query_as!(
+        let select_element_after_delete = sqlx::query_as!(
             LinkMessage,
-            "SELECT * from link_message WHERE link_unique = true"
+            "
+                    DELETE FROM link_message
+                    WHERE link_unique = true
+                    RETURNING *
+                    "
         )
         .fetch_one(pg_pool)
         .await
-        .expect("select link message by link_unique");
-        sqlx::query!(
-            r#"
-                    DELETE FROM link_message
-                    WHERE link_unique = true
-                    "#
-        )
-        .execute(pg_pool)
-        .await
         .unwrap();
-        return select_element_before_delete;
+        return select_element_after_delete;
     }
 }
 
