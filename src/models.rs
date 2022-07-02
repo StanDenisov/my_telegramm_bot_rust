@@ -1,5 +1,5 @@
-use sqlx::PgPool;
-use std::any::Any;
+use sqlx::postgres::PgQueryResult;
+use sqlx::{Error, PgPool};
 
 #[derive(Debug, Clone)]
 pub struct Message {
@@ -15,8 +15,8 @@ impl Message {
             message_id,
         }
     }
-    pub async fn insert(&self, pg_pool: &PgPool) {
-        sqlx::query(
+    pub async fn insert(&self, pg_pool: &PgPool) -> Result<PgQueryResult, Error> {
+        return sqlx::query(
             r#"
     INSERT INTO message (message_id,text,chat_id)
     VALUES ( $1::bigint,$2,$3::bigint)
@@ -27,20 +27,53 @@ impl Message {
         .bind(&self.text)
         .bind(&self.chat_id)
         .execute(pg_pool)
-        .await
-        .expect("insert message");
+        .await;
     }
 
-    pub async fn select_first_user_message_by_chat_id(chat_id: i64, pg_pool: &PgPool) -> i64 {
+    pub async fn select_next_message(
+        chat_id: i64,
+        pg_pool: &PgPool,
+        id: i64,
+    ) -> Result<Message, Error> {
+        let record = sqlx::query_as!(
+            Message,
+            r#"SELECT * FROM message WHERE chat_id = $1 AND message_id > $2  LIMIT 1"#,
+            chat_id,
+            id
+        )
+        .fetch_one(pg_pool)
+        .await;
+        return record;
+    }
+
+    pub async fn select_last_message(
+        chat_id: i64,
+        pg_pool: &PgPool,
+        id: i64,
+    ) -> Result<Message, Error> {
+        let record = sqlx::query_as!(
+            Message,
+            r#"SELECT text, chat_id, message_id FROM message WHERE chat_id = $1 AND message_id = (select MAX(message_id) from message WHERE message_id < $2)  LIMIT 1"#,
+            chat_id,
+            id
+        )
+        .fetch_one(pg_pool)
+        .await;
+        return record;
+    }
+
+    pub async fn select_first_user_message_by_chat_id(
+        chat_id: i64,
+        pg_pool: &PgPool,
+    ) -> Result<Message, Error> {
         let record = sqlx::query_as!(
             Message,
             r#"SELECT * FROM message WHERE chat_id = $1 LIMIT 1"#,
             chat_id
         )
         .fetch_one(pg_pool)
-        .await
-        .expect("get last update");
-        return record.message_id;
+        .await;
+        return record;
     }
 }
 
@@ -49,57 +82,49 @@ pub struct LinkMessage {
     pub id: i64,
     pub text: String,
     pub chat_id: i64,
-    pub reply_to_message_id: i64,
-    pub link_unique: Option<bool>,
+    pub message_id: i64,
 }
 
 impl LinkMessage {
-    pub async fn new(
-        id: i64,
-        text: String,
-        chat_id: i64,
-        reply_to_message_id: i64,
-        link_unique: Option<bool>,
-    ) -> Self {
+    pub async fn new(id: i64, text: String, chat_id: i64, message_id: i64) -> Self {
         Self {
             id,
             text,
             chat_id,
-            reply_to_message_id,
-            link_unique,
+            message_id,
         }
     }
 
-    pub async fn insert(&self, pg_pool: &PgPool) {
-        sqlx::query(
+    pub async fn insert(&self, pg_pool: &PgPool) -> Result<PgQueryResult, Error> {
+        return sqlx::query(
             r#"
-    INSERT INTO link_message (id,text,chat_id,reply_to_message_id, link_unique)
-    VALUES ( $1::bigint,$2,$3::bigint, $4::bigint, $5)
+    INSERT INTO link_message (id,text,chat_id, message_id)
+    VALUES ( $1::bigint,$2,$3::bigint, $4::bigint)
     ON CONFLICT DO NOTHING
         "#,
         )
         .bind(&self.id)
         .bind(&self.text)
         .bind(&self.chat_id)
-        .bind(&self.reply_to_message_id)
-        .bind(true)
+        .bind(&self.message_id)
         .execute(pg_pool)
-        .await
-        .expect("insert link_message");
+        .await;
     }
 
-    pub async fn delete_and_return_link(pg_pool: &PgPool) -> LinkMessage {
+    pub async fn delete_and_return_link(
+        pg_pool: &PgPool,
+        chat_id: i64,
+    ) -> Result<LinkMessage, Error> {
         let select_element_after_delete = sqlx::query_as!(
             LinkMessage,
-            "
-                    DELETE FROM link_message
-                    WHERE link_unique = true
+            r#"DELETE FROM link_message
+                    WHERE chat_id = $1
                     RETURNING *
-                    "
+                    "#,
+            chat_id
         )
         .fetch_one(pg_pool)
-        .await
-        .unwrap();
+        .await;
         return select_element_after_delete;
     }
 }
@@ -114,8 +139,8 @@ impl EditedMessage {
         Self { message_id, text }
     }
 
-    pub async fn change_message_text(&self, pg_pool: &PgPool) {
-        sqlx::query(
+    pub async fn change_message_text(&self, pg_pool: &PgPool) -> Result<PgQueryResult, Error> {
+        return sqlx::query(
             r#"
                     UPDATE message
                     SET text = $1
@@ -125,8 +150,7 @@ impl EditedMessage {
         .bind(&self.text)
         .bind(&self.message_id)
         .execute(pg_pool)
-        .await
-        .expect("OMG cant update message");
+        .await;
     }
 }
 
@@ -141,8 +165,8 @@ impl Update {
         return Self { id, update_id };
     }
 
-    pub async fn insert(&self, pg_pool: &PgPool) {
-        sqlx::query(
+    pub async fn insert(&self, pg_pool: &PgPool) -> Result<PgQueryResult, Error> {
+        return sqlx::query(
             r#"
     UPDATE update
     SET update_id = $1::bigint
@@ -151,16 +175,12 @@ impl Update {
         )
         .bind(self.update_id + 1)
         .execute(pg_pool)
-        .await
-        .expect("insert update");
+        .await;
     }
 
-    pub async fn get_last_update(pg_pool: &PgPool) -> i64 {
-        let record = sqlx::query_as!(Update, r#"SELECT * FROM UPDATE WHERE ID = 1"#)
+    pub async fn get_last_update(pg_pool: &PgPool) -> Result<Update, Error> {
+        sqlx::query_as!(Update, r#"SELECT * FROM UPDATE WHERE ID = 1"#)
             .fetch_one(pg_pool)
             .await
-            .expect("get last update");
-        println!("{:?}", record.update_id);
-        return record.update_id;
     }
 }

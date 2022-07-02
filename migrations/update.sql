@@ -3,9 +3,7 @@ CREATE TABLE IF NOT EXISTS link_message
     id          BIGSERIAL PRIMARY KEY,
     text        VARCHAR(256)    NOT NULL,
     chat_id     BIGSERIAL NOT NULL,
-    reply_to_message_id BIGSERIAL NOT NULL,
-    link_unique BOOLEAN,
-    UNIQUE(link_unique)
+    message_id  BIGSERIAL NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS update

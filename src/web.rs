@@ -1,24 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
-#[serde(rename_all = "snake_case")]
-pub struct NewLinkMessage {
-    pub text: String,
-    pub reply_to_message_id: i64,
-    pub chat_id: i64,
-}
-
-impl NewLinkMessage {
-    pub async fn new(text: String, reply_to_message_id: i64, chat_id: i64) -> Self {
-        Self {
-            text,
-            reply_to_message_id,
-            chat_id,
-        }
-    }
-}
-
 /// https://core.telegram.org/bots/api#message
 #[derive(Deserialize, Serialize, Clone, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -38,6 +20,14 @@ pub struct WEditedMessage {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
+#[serde(rename_all = "snake_case")]
+#[serde(rename(serialize = "callback_query", deserialize = "callback_query"))]
+pub struct WCallbackQuery {
+    pub data: String,
+    pub message: WMessage,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
 #[serde(rename(serialize = "chat", deserialize = "chat"))]
 pub struct WChat {
     pub id: i64,
@@ -50,6 +40,7 @@ pub struct WChat {
 pub struct WUpdate {
     pub update_id: i64,
     pub message: Option<WMessage>,
+    pub callback_query: Option<WCallbackQuery>,
     pub edited_message: Option<WEditedMessage>,
 }
 
@@ -66,13 +57,13 @@ pub struct Wrapper<T> {
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 #[serde(rename_all = "snake_case")]
-pub struct ReplyKeyboardMarkup {
-    pub keyboard: Vec<Vec<KeyboardButton>>,
+pub struct InlineKeyboardMarkup {
+    pub inline_keyboard: Vec<Vec<KeyboardButton>>,
 }
 
-impl ReplyKeyboardMarkup {
-    pub fn new(keyboard: Vec<Vec<KeyboardButton>>) -> Self {
-        Self { keyboard }
+impl InlineKeyboardMarkup {
+    pub fn new(inline_keyboard: Vec<Vec<KeyboardButton>>) -> Self {
+        Self { inline_keyboard }
     }
 }
 
@@ -80,11 +71,15 @@ impl ReplyKeyboardMarkup {
 #[serde(rename_all = "snake_case")]
 pub struct KeyboardButton {
     pub text: String,
+    pub callback_data: String,
 }
 
 impl KeyboardButton {
-    pub fn new(text: String) -> Self {
-        Self { text }
+    pub fn new(text: String, callback_data: String) -> Self {
+        Self {
+            text,
+            callback_data,
+        }
     }
 }
 
@@ -109,21 +104,14 @@ impl DeleteMessage {
 pub struct WButtons {
     pub chat_id: i64,
     pub text: String,
-    pub reply_to_message_id: i64,
-    pub reply_markup: ReplyKeyboardMarkup,
+    pub reply_markup: InlineKeyboardMarkup,
 }
 
 impl WButtons {
-    pub fn new(
-        chat_id: i64,
-        text: String,
-        reply_to_message_id: i64,
-        reply_markup: ReplyKeyboardMarkup,
-    ) -> Self {
+    pub fn new(chat_id: i64, text: String, reply_markup: InlineKeyboardMarkup) -> Self {
         Self {
             chat_id,
             text,
-            reply_to_message_id,
             reply_markup,
         }
     }

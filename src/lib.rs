@@ -1,12 +1,8 @@
 use crate::models::{EditedMessage, Message, Update};
 use crate::pg_service::PgService;
 use crate::tg_service::TgClient;
-use crate::web::WUpdate;
 use futures::pin_mut;
-use futures_core::Stream;
 use std::sync::Arc;
-use std::thread::sleep;
-use tokio::pin;
 use tokio_stream::StreamExt;
 
 mod models;
@@ -31,17 +27,27 @@ async fn process_updates(tg_client: &TgClient, postgres_service: &PgService) {
         while let Some(upd) = x.next().await {
             match upd {
                 Ok(upd) => {
-                    println!("got message");
                     match upd.edited_message {
                         Some(wem) => {
-                            Update::new(1, upd.update_id)
+                            let update = Update::new(1, upd.update_id)
                                 .await
                                 .insert(&&postgres_service.pg_pool)
                                 .await;
-                            EditedMessage::new(wem.message_id, wem.text)
-                                .await
-                                .change_message_text(&&postgres_service.pg_pool)
-                                .await;
+                            match update {
+                                Ok(_) => {
+                                    let e = EditedMessage::new(wem.message_id, wem.text)
+                                        .await
+                                        .change_message_text(&&postgres_service.pg_pool)
+                                        .await;
+                                    match e {
+                                        Ok(_) => println!("message edited"),
+                                        Err(x) => println!("{:?}", x),
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("{:?}", e)
+                                }
+                            }
                         }
                         None => {}
                     }
@@ -49,41 +55,103 @@ async fn process_updates(tg_client: &TgClient, postgres_service: &PgService) {
                         Some(wm) => match wm.text.as_str() {
                             "/history" => {
                                 println!("history");
-                                Update::new(1, upd.update_id)
+                                let update = Update::new(1, upd.update_id)
                                     .await
                                     .insert(&&postgres_service.pg_pool)
                                     .await;
-                                let x = tg_client
-                                    .history(&&postgres_service.pg_pool, wm.chat.id)
-                                    .await;
-                                println!("{:?}", x);
+                                match update {
+                                    Ok(_) => {
+                                        tg_client
+                                            .history(&&postgres_service.pg_pool, wm.chat.id)
+                                            .await;
+                                    }
+                                    Err(e) => {
+                                        eprintln!("{:?}", e)
+                                    }
+                                }
                             }
-                            "/next" => {
-                                println!("next");
-                                Update::new(1, upd.update_id)
+                            "/exit" => {
+                                println!("exit");
+                                let update = Update::new(1, upd.update_id)
                                     .await
                                     .insert(&&postgres_service.pg_pool)
                                     .await;
-                                tg_client.next(&&postgres_service.pg_pool).await;
-                            }
-                            "/last" => {
-                                println!("last");
-                                Update::new(1, upd.update_id)
-                                    .await
-                                    .insert(&&postgres_service.pg_pool)
-                                    .await;
-                                tg_client.last(&&postgres_service.pg_pool).await;
+                                match update {
+                                    Ok(_) => {
+                                        tg_client
+                                            .exit(&&postgres_service.pg_pool, wm.chat.id)
+                                            .await;
+                                    }
+                                    Err(e) => {
+                                        eprintln!("{:?}", e)
+                                    }
+                                }
                             }
                             _ => {
                                 println!("message");
-                                Update::new(1, upd.update_id)
+                                let update = Update::new(1, upd.update_id)
                                     .await
                                     .insert(&&postgres_service.pg_pool)
                                     .await;
-                                Message::new(wm.text, wm.chat.id, wm.message_id)
+                                match update {
+                                    Ok(_) => {
+                                        let message =
+                                            Message::new(wm.text, wm.chat.id, wm.message_id)
+                                                .await
+                                                .insert(&&postgres_service.pg_pool)
+                                                .await;
+                                        match message {
+                                            Ok(_) => {
+                                                println!("message saved")
+                                            }
+                                            Err(e) => {
+                                                eprintln!("{:?}", e)
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("{:?}", e)
+                                    }
+                                }
+                            }
+                        },
+                        None => {}
+                    }
+                    match upd.callback_query {
+                        Some(wc) => match wc.data.as_str() {
+                            "/next" => {
+                                println!("next");
+                                let update = Update::new(1, upd.update_id)
                                     .await
                                     .insert(&&postgres_service.pg_pool)
                                     .await;
+                                match update {
+                                    Ok(_) => {
+                                        tg_client
+                                            .next(&&postgres_service.pg_pool, wc.message.chat.id)
+                                            .await;
+                                    }
+                                    Err(e) => {
+                                        eprintln!("{:?}", e)
+                                    }
+                                }
+                            }
+                            _ => {
+                                println!("last");
+                                let update = Update::new(1, upd.update_id)
+                                    .await
+                                    .insert(&&postgres_service.pg_pool)
+                                    .await;
+                                match update {
+                                    Ok(_) => {
+                                        tg_client
+                                            .last(&&postgres_service.pg_pool, wc.message.chat.id)
+                                            .await;
+                                    }
+                                    Err(e) => {
+                                        eprintln!("{:?}", e)
+                                    }
+                                }
                             }
                         },
                         None => {}
@@ -92,5 +160,6 @@ async fn process_updates(tg_client: &TgClient, postgres_service: &PgService) {
                 Err(_) => break,
             }
         }
+        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
     }
 }
